@@ -1,0 +1,323 @@
+import uuid
+from datetime import datetime, timedelta
+
+class Library:
+    """
+    Manages the collections of books, members, and loan transactions.
+    Data is stored in memory using dictionaries and lists.
+    """
+    def __init__(self):
+        # Stores books: {isbn: {'title': str, 'author': str, 'total_copies': int, 'available_copies': int}}
+        self.books = {}
+        # Stores members: {member_id: {'name': str}}
+        self.members = {}
+        # Stores loans: [{'isbn': str, 'member_id': str, 'issue_date': datetime, 'due_date': datetime}]
+        self.loans = []
+
+    # --- BOOK MANAGEMENT ---
+
+    def add_book(self, title, author, isbn, quantity):
+        """Adds a new book or updates the quantity of an existing one."""
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                print("Quantity must be a positive integer.")
+                return
+        except ValueError:
+            print("Invalid quantity. Please enter a number.")
+            return
+
+        if isbn in self.books:
+            # Update existing book quantity
+            old_qty = self.books[isbn]['total_copies']
+            old_available = self.books[isbn]['available_copies']
+            new_total = old_qty + quantity
+            new_available = old_available + quantity
+            self.books[isbn]['total_copies'] = new_total
+            self.books[isbn]['available_copies'] = new_available
+            print(f"✅ Quantity for '{title}' (ISBN: {isbn}) updated. Total copies: {new_total}.")
+        else:
+            # Add new book
+            self.books[isbn] = {
+                'title': title,
+                'author': author,
+                'total_copies': quantity,
+                'available_copies': quantity
+            }
+            print(f"✅ Book '{title}' by {author} (ISBN: {isbn}) added with {quantity} copies.")
+
+    def list_books(self):
+        """Displays all books currently in the library."""
+        if not self.books:
+            print("No books found in the library.")
+            return
+
+        print("\n--- LIBRARY CATALOG ---")
+        for isbn, book in self.books.items():
+            print(f"  Title: {book['title']:<30} | Author: {book['author']:<20} | ISBN: {isbn:<13} | Total: {book['total_copies']} | Available: {book['available_copies']}")
+        print("-----------------------\n")
+
+    def search_book(self, query):
+        """Searches for a book by title, author, or ISBN."""
+        results = [
+            (isbn, book) for isbn, book in self.books.items()
+            if query.lower() in book['title'].lower() or
+               query.lower() in book['author'].lower() or
+               query == isbn
+        ]
+
+        if not results:
+            print(f"No books found matching '{query}'.")
+            return
+
+        print(f"\n--- Search Results for '{query}' ---")
+        for isbn, book in results:
+            print(f"  Title: {book['title']:<30} | Author: {book['author']:<20} | ISBN: {isbn:<13} | Available: {book['available_copies']}")
+        print("------------------------------------\n")
+
+    # --- MEMBER MANAGEMENT ---
+
+    def add_member(self, name):
+        """Adds a new member with a unique ID."""
+        member_id = str(uuid.uuid4())[:8] # Generate a short, unique ID
+        self.members[member_id] = {'name': name}
+        print(f"✅ Member '{name}' added successfully. Member ID: {member_id}")
+        return member_id
+
+    def list_members(self):
+        """Displays all registered library members."""
+        if not self.members:
+            print("No members registered yet.")
+            return
+
+        print("\n--- LIBRARY MEMBERS ---")
+        for member_id, member in self.members.items():
+            print(f"  Name: {member['name']:<25} | ID: {member_id}")
+        print("-----------------------\n")
+
+    def search_member(self, query):
+        """Searches for a member by name or member ID."""
+        results = [
+            (mid, member) for mid, member in self.members.items()
+            if query.lower() in member['name'].lower() or
+               query == mid
+        ]
+
+        if not results:
+            print(f"No members found matching '{query}'.")
+            return
+
+        print(f"\n--- Member Search Results for '{query}' ---")
+        for mid, member in results:
+            print(f"  Name: {member['name']:<25} | ID: {mid}")
+        print("-------------------------------------------\n")
+
+    # --- LOAN MANAGEMENT ---
+
+    def issue_book(self, isbn, member_id):
+        """Issues a book to a member."""
+        if isbn not in self.books:
+            print(f"❌ Error: Book with ISBN {isbn} not found.")
+            return
+        if member_id not in self.members:
+            print(f"❌ Error: Member with ID {member_id} not found.")
+            return
+
+        book = self.books[isbn]
+        if book['available_copies'] <= 0:
+            print(f"❌ Error: All copies of '{book['title']}' are currently on loan.")
+            return
+
+        # Check if the member already has this book checked out
+        for loan in self.loans:
+            if loan['isbn'] == isbn and loan['member_id'] == member_id and 'return_date' not in loan:
+                print(f"❌ Error: Member {self.members[member_id]['name']} already has '{book['title']}' checked out.")
+                return
+
+        # Create new loan record
+        issue_date = datetime.now()
+        due_date = issue_date + timedelta(weeks=2) # 2-week loan period
+        self.loans.append({
+            'isbn': isbn,
+            'member_id': member_id,
+            'issue_date': issue_date,
+            'due_date': due_date,
+            'is_returned': False
+        })
+        # Decrement available copies
+        book['available_copies'] -= 1
+
+        print(f"✅ Success! '{book['title']}' issued to {self.members[member_id]['name']}.")
+        print(f"   Due Date: {due_date.strftime('%Y-%m-%d')}")
+
+    def return_book(self, isbn, member_id):
+        """Records the return of a book and checks for overdue status."""
+        if isbn not in self.books or member_id not in self.members:
+            print("❌ Error: Book or Member ID is invalid.")
+            return
+
+        loan_found = False
+        today = datetime.now()
+
+        # Find the matching active loan
+        for loan in self.loans:
+            if loan['isbn'] == isbn and loan['member_id'] == member_id and not loan['is_returned']:
+                loan_found = True
+                
+                # Update loan record
+                loan['return_date'] = today
+                loan['is_returned'] = True
+
+                # Increment available copies
+                self.books[isbn]['available_copies'] += 1
+
+                print(f"✅ Success! '{self.books[isbn]['title']}' returned by {self.members[member_id]['name']}.")
+
+                # Check for overdue status
+                if today > loan['due_date']:
+                    overdue_days = (today - loan['due_date']).days
+                    print(f"⚠️ Book is **{overdue_days} days overdue!** Fine might be applicable.")
+                
+                break
+        
+        if not loan_found:
+            print("❌ Error: Could not find an active loan for this book/member combination.")
+
+    def list_active_loans(self):
+        """Lists all books currently checked out."""
+        active_loans = [loan for loan in self.loans if not loan.get('is_returned', True)]
+
+        if not active_loans:
+            print("No books are currently on loan.")
+            return
+
+        print("\n--- ACTIVE LOANS ---")
+        for loan in active_loans:
+            book_title = self.books.get(loan['isbn'], {'title': 'Unknown Book'})['title']
+            member_name = self.members.get(loan['member_id'], {'name': 'Unknown Member'})['name']
+            due_date_str = loan['due_date'].strftime('%Y-%m-%d')
+            
+            status = "ON TIME"
+            if datetime.now() > loan['due_date']:
+                status = "OVERDUE"
+
+            print(f"  Book: {book_title:<30} | Member: {member_name:<20} | Due: {due_date_str:<10} | Status: {status}")
+        print("--------------------\n")
+
+# --- CONSOLE INTERFACE ---
+
+def main():
+    """Main function to run the console application."""
+    library = Library()
+
+    # Seed data for demonstration
+    library.add_book("The Great Gatsby", "F. Scott Fitzgerald", "9780743273565", 3)
+    library.add_book("1984", "George Orwell", "9780451524935", 5)
+    m_id_john = library.add_member("John Smith")
+    m_id_jane = library.add_member("Jane Doe")
+
+    print("\n📚 WELCOME TO THE CONSOLE LIBRARY MANAGEMENT SYSTEM 📚")
+
+    while True:
+        print("\n--- MAIN MENU ---")
+        print("1. Book Management")
+        print("2. Member Management")
+        print("3. Loan Management")
+        print("4. Exit")
+        
+        choice = input("Enter your choice (1-4): ")
+
+        if choice == '1':
+            book_menu(library)
+        elif choice == '2':
+            member_menu(library)
+        elif choice == '3':
+            loan_menu(library)
+        elif choice == '4':
+            print("👋 Thank you for using the Library System. Goodbye!")
+            break
+        else:
+            print("⚠️ Invalid choice. Please enter a number between 1 and 4.")
+
+def book_menu(library):
+    """Handles the Book Management section."""
+    while True:
+        print("\n--- BOOK MANAGEMENT ---")
+        print("1. Add Book/Update Quantity")
+        print("2. List All Books")
+        print("3. Search Book")
+        print("4. Back to Main Menu")
+        
+        choice = input("Enter your choice (1-4): ")
+
+        if choice == '1':
+            title = input("Enter Title: ")
+            author = input("Enter Author: ")
+            isbn = input("Enter ISBN (unique identifier): ")
+            quantity = input("Enter Quantity: ")
+            library.add_book(title, author, isbn, quantity)
+        elif choice == '2':
+            library.list_books()
+        elif choice == '3':
+            query = input("Enter Title, Author, or ISBN to search: ")
+            library.search_book(query)
+        elif choice == '4':
+            break
+        else:
+            print("⚠️ Invalid choice. Please enter a number between 1 and 4.")
+
+def member_menu(library):
+    """Handles the Member Management section."""
+    while True:
+        print("\n--- MEMBER MANAGEMENT ---")
+        print("1. Register New Member")
+        print("2. List All Members")
+        print("3. Search Member")
+        print("4. Back to Main Menu")
+        
+        choice = input("Enter your choice (1-4): ")
+
+        if choice == '1':
+            name = input("Enter Member Name: ")
+            if name:
+                library.add_member(name)
+            else:
+                print("Member name cannot be empty.")
+        elif choice == '2':
+            library.list_members()
+        elif choice == '3':
+            query = input("Enter Name or Member ID to search: ")
+            library.search_member(query)
+        elif choice == '4':
+            break
+        else:
+            print("⚠️ Invalid choice. Please enter a number between 1 and 4.")
+
+def loan_menu(library):
+    """Handles the Loan Management section."""
+    while True:
+        print("\n--- LOAN MANAGEMENT ---")
+        print("1. Issue Book")
+        print("2. Return Book")
+        print("3. List Active Loans")
+        print("4. Back to Main Menu")
+        
+        choice = input("Enter your choice (1-4): ")
+
+        if choice == '1':
+            isbn = input("Enter Book ISBN to issue: ")
+            member_id = input("Enter Member ID: ")
+            library.issue_book(isbn, member_id)
+        elif choice == '2':
+            isbn = input("Enter Book ISBN to return: ")
+            member_id = input("Enter Member ID: ")
+            library.return_book(isbn, member_id)
+        elif choice == '3':
+            library.list_active_loans()
+        elif choice == '4':
+            break
+        else:
+            print("⚠️ Invalid choice. Please enter a number between 1 and 4.")
+
+if __name__ == "__main__":
+    main()
